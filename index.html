@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Teleconsultation Dashboard — Single File</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- React UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-router-dom@6.23.1/dist/umd/react-router-dom.development.js"></script>
+  <!-- Babel for in-browser JSX transpile (dev only) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* Core layout */
+    :root {
+      --bg: #f5f7fb;
+      --accent: #0ea5e9;
+      --muted: #6b7280;
+      --card: #ffffff;
+      --sidebar: #0f1724;
+      --sidebar-accent: #111827;
+      --success: #10b981;
+    }
+    html,body,#root { height:100%; margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: var(--bg); color:#0f1724; }
+    .app { display:flex; height:100vh; overflow:hidden; }
+    .sidebar { width:240px; background: linear-gradient(180deg,var(--sidebar) 0%, var(--sidebar-accent) 100%); color:#fff; display:flex; flex-direction:column; padding:20px 14px; box-sizing:border-box; }
+    .logo { font-weight:700; font-size:1.1rem; margin-bottom:14px; text-align:center; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.05); }
+    .nav { margin-top:12px; flex:1; }
+    .nav a { display:block; padding:10px 12px; color:rgba(255,255,255,0.85); text-decoration:none; border-radius:8px; margin-bottom:6px; font-size:0.95rem; }
+    .nav a.active { background: rgba(255,255,255,0.06); color:#fff; }
+    .status { font-size:0.85rem; color:rgba(255,255,255,0.7); margin-top:12px; }
+
+    .main { flex:1; display:flex; flex-direction:column; }
+    header.topbar { height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 20px; background:#fff; border-bottom:1px solid #e6edf3; }
+    .top-left { display:flex; align-items:center; gap:14px; }
+    h1 { font-size:1.125rem; margin:0; font-weight:600; }
+    .top-actions { display:flex; gap:8px; align-items:center; }
+
+    .content { padding:18px; overflow:auto; display:flex; flex-direction:column; gap:16px; }
+
+    .metrics { display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .card { background:var(--card); border-radius:10px; padding:12px; box-shadow: 0 6px 18px rgba(8,15,25,0.04); }
+    .card h3 { margin:0; font-size:0.85rem; color:var(--muted); }
+    .card .big { font-size:1.6rem; font-weight:700; margin-top:6px; }
+
+    .grid-3 { display:grid; grid-template-columns: 1fr 420px 360px; gap:14px; align-items:start; }
+    @media (max-width:1100px){ .grid-3 { grid-template-columns: 1fr; } .sidebar { display:none; } }
+
+    /* Appointments list */
+    .appt-list { max-height:340px; overflow:auto; display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+    .appt { display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:8px; border:1px solid #eef3f7; }
+    .appt .meta { font-size:0.9rem; }
+    .status-pill { font-size:0.75rem; padding:6px 8px; border-radius:999px; }
+
+    /* Video box */
+    .video-box { display:flex; flex-direction:column; gap:8px; }
+    video.local { width:100%; height:260px; background:black; border-radius:8px; object-fit:cover; }
+    .video-controls { display:flex; gap:8px; flex-wrap:wrap; }
+
+    .chat { display:flex; flex-direction:column; height:100%; gap:8px; }
+    .chat-messages { max-height:300px; overflow:auto; display:flex; flex-direction:column-reverse; gap:8px; padding:8px; border-radius:8px; background:#fbfdff; border:1px solid #eef6fb; }
+    .msg { max-width:80%; padding:6px 10px; border-radius:8px; }
+    .msg.me { align-self:flex-end; background:#dbeafe; }
+    .msg.them { align-self:flex-start; background:#f1f5f9; }
+
+    .notifications { max-height:140px; overflow:auto; font-size:0.9rem; color:var(--muted); margin-top:8px; }
+
+    .btn { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; }
+    .btn.primary { background:var(--accent); color:white; }
+    .btn.ghost { background:transparent; border:1px solid #e6edf3; color:var(--muted); }
+    .btn.warn { background:#f59e0b; color:white; }
+
+    footer.small { padding:12px 18px; color:var(--muted); font-size:0.85rem; }
+    .small-muted { font-size:0.82rem; color:var(--muted); }
+
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- App code -->
+  <script type="text/babel">
+    const { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } = ReactRouterDOM;
+    const { useState, useEffect, useRef } = React;
+
+    /* ---------------- Sidebar ---------------- */
+    function Sidebar() {
+      const items = [
+        {to: '/dashboard', label: 'Dashboard'},
+        {to: '/booking', label: 'Booking'},
+        {to: '/consultation', label: 'Consultation'},
+        {to: '/payments', label: 'Payments'},
+        {to: '/settings', label: 'Settings'},
+        {to: '/records', label: 'Records'},
+        {to: '/feedback', label: 'Feedback'}
+      ];
+      return (
+        <aside className="sidebar" aria-label="Sidebar">
+          <div className="logo">TeleDoc • Admin</div>
+          <nav className="nav" aria-label="Main Navigation">
+            {items.map(i => (
+              <NavLink key={i.to} to={i.to} className={({isActive}) => isActive ? 'active' : ''}>
+                {i.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="status">Realtime: <span style={{color:'#34d399', fontWeight:700}}>Demo</span></div>
+        </aside>
+      );
+    }
+
+    /* ---------------- Header ---------------- */
+    function Topbar({ onCopy }) {
+      return (
+        <header className="topbar">
+          <div className="top-left">
+            <h1>Teleconsultation Admin</h1>
+            <div className="small-muted">Manage bookings & realtime sessions</div>
+          </div>
+          <div className="top-actions">
+            <button className="btn ghost" onClick={() => { navigator.clipboard.writeText(location.href); onCopy && onCopy(); }}>Copy Clinic Link</button>
+            <button className="btn primary" onClick={() => alert('Open settings modal (not implemented)')}>Create New</button>
+          </div>
+        </header>
+      );
+    }
+
+    /* ---------------- Dashboard Page ---------------- */
+    function DashboardOverview() {
+      return (
+        <div className="card">
+          <h3>Overview</h3>
+          <p className="small-muted" style={{marginTop:8}}>Welcome to the Teleconsultation dashboard demo. Use the sidebar to navigate — this demo includes camera/mic permissions, recording, snapshot, screen share and a demo WebSocket chat.</p>
+        </div>
+      );
+    }
+
+    /* ---------------- Booking Page ---------------- */
+    function BookingPage() {
+      const [name, setName] = useState('');
+      const [date, setDate] = useState('');
+      const [slot, setSlot] = useState('');
+      const [type, setType] = useState('video');
+      const [booked, setBooked] = useState(false);
+
+      const submit = (e) => {
+        e.preventDefault();
+        setBooked(true);
+        setTimeout(()=>setBooked(false), 2500);
+      };
+
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Book Appointment</h2>
+          <form className="card" onSubmit={submit} style={{maxWidth:520}}>
+            <label>Patient Name</label>
+            <input value={name} onChange={e=>setName(e.target.value)} required style={{width:'100%',padding:8,marginTop:6}} />
+            <label style={{marginTop:10}}>Date</label>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} required style={{width:'100%',padding:8,marginTop:6}} />
+            <label style={{marginTop:10}}>Slot</label>
+            <select value={slot} onChange={e=>setSlot(e.target.value)} required style={{width:'100%',padding:8,marginTop:6}}>
+              <option value="">--Select--</option>
+              <option value="09:00">09:00 — 10:00</option>
+              <option value="10:15">10:15 — 11:15</option>
+              <option value="11:30">11:30 — 12:30</option>
+            </select>
+            <label style={{marginTop:10}}>Type</label>
+            <select value={type} onChange={e=>setType(e.target.value)} style={{width:'100%',padding:8,marginTop:6}}>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="chat">Chat</option>
+            </select>
+
+            <div style={{marginTop:12, display:'flex', gap:8}}>
+              <button className="btn primary" type="submit">Book Appointment</button>
+              <button className="btn ghost" type="button" onClick={()=>{ setName(''); setDate(''); setSlot(''); setType('video'); }}>Reset</button>
+            </div>
+
+            {booked && <div style={{marginTop:10,color: 'green'}}>Appointment booked! Awaiting payment.</div>}
+          </form>
+        </div>
+      );
+    }
+
+    /* ---------------- Consultation Page (Legacy simple) ---------------- */
+    function ConsultationPage() {
+      const [isActive, setIsActive] = useState(true);
+      const [type, setType] = useState('video');
+      useEffect(()=>{ setIsActive(true); setType('video'); }, []);
+      const start = ()=> { if (!isActive) return alert('No active'); alert('Starting ' + type + ' session (demo)'); };
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Consultation</h2>
+          {isActive ? (
+            <div className="card">
+              <p>Type: <strong>{type.toUpperCase()}</strong></p>
+              <div style={{display:'flex',gap:8}}>
+                <button className="btn primary" onClick={start}>Start {type.toUpperCase()}</button>
+                <select value={type} onChange={e=>setType(e.target.value)} style={{padding:8}}>
+                  <option value="video">Video</option>
+                  <option value="audio">Audio</option>
+                  <option value="chat">Chat</option>
+                </select>
+              </div>
+            </div>
+          ) : <p>No active consultations.</p>}
+        </div>
+      );
+    }
+
+    /* ---------------- Payments Page ---------------- */
+    function PaymentsPage() {
+      const [card, setCard] = useState('');
+      const [name, setName] = useState('');
+      const [paid, setPaid] = useState(false);
+      const pay = (e) => { e.preventDefault(); setPaid(true); setTimeout(()=>setPaid(false), 2000); };
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Payments</h2>
+          <form className="card" onSubmit={pay} style={{maxWidth:520}}>
+            <label>Cardholder</label>
+            <input value={name} onChange={e=>setName(e.target.value)} required style={{width:'100%',padding:8}} />
+            <label style={{marginTop:10}}>Card Number</label>
+            <input value={card} onChange={e=>setCard(e.target.value)} maxLength={16} required style={{width:'100%',padding:8}} />
+            <div style={{marginTop:12}}>
+              <button className="btn primary" type="submit">{paid ? 'Paid' : 'Pay Now'}</button>
+            </div>
+            {paid && <div style={{marginTop:8,color:'green'}}>Payment successful!</div>}
+          </form>
+        </div>
+      );
+    }
+
+    /* ---------------- Settings Page ---------------- */
+    function SettingsPage() {
+      const [clinic, setClinic] = useState('My Clinic');
+      const [tz, setTz] = useState('Asia/Kolkata');
+      const [email, setEmail] = useState('admin@clinic.com');
+      const [saved, setSaved] = useState(false);
+      const save = (e) => { e.preventDefault(); setSaved(true); setTimeout(()=>setSaved(false),2000); };
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Settings</h2>
+          <form className="card" onSubmit={save} style={{maxWidth:520}}>
+            <label>Clinic Name</label>
+            <input value={clinic} onChange={e=>setClinic(e.target.value)} required style={{width:'100%',padding:8}} />
+            <label style={{marginTop:8}}>Timezone</label>
+            <select value={tz} onChange={e=>setTz(e.target.value)} style={{padding:8}}>
+              <option value="Asia/Kolkata">Asia/Kolkata</option>
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">America/New_York</option>
+            </select>
+            <label style={{marginTop:8}}>Notification Email</label>
+            <input value={email} onChange={e=>setEmail(e.target.value)} type="email" required style={{width:'100%',padding:8}} />
+            <div style={{marginTop:12}}>
+              <button className="btn primary" type="submit">Save Settings</button>
+            </div>
+            {saved && <div style={{marginTop:8, color:'green'}}>Settings saved!</div>}
+          </form>
+        </div>
+      );
+    }
+
+    /* ---------------- Records Page ---------------- */
+    function RecordsPage() {
+      const [filter, setFilter] = useState('');
+      const [records, setRecords] = useState([]);
+      useEffect(()=> {
+        setRecords([
+          {id:1, patient:'John Doe', type:'video', date:'2025-09-20'},
+          {id:2, patient:'Alice Smith', type:'audio', date:'2025-09-21'},
+          {id:3, patient:'Rahul Kumar', type:'chat', date:'2025-09-22'}
+        ]);
+      }, []);
+      const filtered = filter ? records.filter(r=>r.type===filter) : records;
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Consultancy Records</h2>
+          <div className="card">
+            <label>Filter by type</label>
+            <select value={filter} onChange={e=>setFilter(e.target.value)} style={{marginTop:8,padding:8}}>
+              <option value="">All</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="chat">Chat</option>
+            </select>
+
+            <div className="appt-list" style={{marginTop:12}}>
+              {filtered.map(r => (
+                <div className="appt" key={r.id}>
+                  <div className="meta">{r.date} • <strong>{r.patient}</strong></div>
+                  <div>{r.type.toUpperCase()}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ---------------- Feedback Page ---------------- */
+    function FeedbackPage() {
+      const [name, setName] = useState('');
+      const [rating, setRating] = useState('');
+      const [comments, setComments] = useState('');
+      const [submitted, setSubmitted] = useState(false);
+      const submit = (e) => { e.preventDefault(); setSubmitted(true); setTimeout(()=>setSubmitted(false),2500); };
+      return (
+        <div>
+          <h2 style={{marginTop:0}}>Patient Feedback</h2>
+          <form className="card" onSubmit={submit} style={{maxWidth:520}}>
+            <label>Patient Name</label>
+            <input value={name} onChange={e=>setName(e.target.value)} required style={{width:'100%',padding:8}} />
+            <label style={{marginTop:8}}>Rating</label>
+            <select value={rating} onChange={e=>setRating(e.target.value)} required style={{padding:8}}>
+              <option value="">--Select--</option>
+              {[1,2,3,4,5].map(n=> <option key={n} value={n}>{n}</option>)}
+            </select>
+            <label style={{marginTop:8}}>Comments</label>
+            <textarea value={comments} onChange={e=>setComments(e.target.value)} rows={4} required style={{width:'100%',padding:8}} />
+            <div style={{marginTop:12}}>
+              <button className="btn primary" type="submit">Submit Feedback</button>
+            </div>
+            {submitted && <div style={{marginTop:8,color:'green'}}>Feedback submitted. Thank you!</div>}
+          </form>
+        </div>
+      );
+    }
+
+    /* ---------------- Realtime Dashboard + Video/Recording/Chat ---------------- */
+    function RealtimeDashboard() {
+      const [appointments, setAppointments] = useState([]);
+      const [metrics, setMetrics] = useState({ liveConsults: 0, todayBooked: 0, revenue: 0 });
+      const [notifications, setNotifications] = useState([]);
+      const [activeAppointment, setActiveAppointment] = useState(null);
+
+      // media states
+      const videoRef = useRef(null);
+      const mediaRef = useRef(null); // MediaRecorder
+      const recordedRef = useRef([]);
+      const streamRef = useRef(null);
+      const [permissionGranted, setPermissionGranted] = useState(false);
+      const [isRecording, setIsRecording] = useState(false);
+      const [isScreenSharing, setIsScreenSharing] = useState(false);
+
+      // chat websocket
+      const wsRef = useRef(null);
+      const [connected, setConnected] = useState(false);
+      const [chatMessages, setChatMessages] = useState([]);
+      const [chatInput, setChatInput] = useState('');
+
+      useEffect(()=> {
+        // initial demo data
+        setAppointments([
+          {id:1, patient:'John Doe', time:'09:00', type:'Video', status:'Pending'},
+          {id:2, patient:'Alice Smith', time:'10:15', type:'Audio', status:'Pending'},
+          {id:3, patient:'Rahul Kumar', time:'11:30', type:'Chat', status:'Completed'}
+        ]);
+        // intervals to simulate realtime
+        const ai = setInterval(()=> {
+          setAppointments(prev=>{
+            if (Math.random() < 0.35) {
+              const id = Date.now();
+              const newAppt = { id, patient: `Patient ${id % 1000}`, time: `${9 + (id % 8)}:00`, type:'Video', status:'Pending' };
+              setNotifications(n => [{id:Date.now(), message:`New booking: ${newAppt.patient}`}, ...n].slice(0,20));
+              setMetrics(m => ({ ...m, todayBooked: m.todayBooked + 1 }));
+              return [newAppt, ...prev].slice(0,10);
+            }
+            // sometimes update one status
+            return prev.map(a => (Math.random()<0.03 ? {...a, status: a.status === 'Pending' ? 'Ongoing' : a.status === 'Ongoing' ? 'Completed' : a.status} : a));
+          });
+        }, 8000);
+
+        const mi = setInterval(()=> {
+          setMetrics(m => ({ ...m, liveConsults: Math.max(0, m.liveConsults + (Math.random()>0.5 ? 1 : -1)), revenue: +(m.revenue + Math.random()*25).toFixed(2) }));
+        }, 6000);
+
+        return ()=> { clearInterval(ai); clearInterval(mi); };
+      }, []);
+
+      // connect to sample echo WebSocket (demo) - replace with your ws endpoint
+      useEffect(()=> {
+        try {
+          const ws = new WebSocket('wss://echo.websocket.events/');
+          wsRef.current = ws;
+          ws.onopen = ()=> setConnected(true);
+          ws.onmessage = (ev)=> {
+            setChatMessages(prev => [{id:Date.now(), from:'them', text: ev.data}, ...prev].slice(0,50));
+          };
+          ws.onclose = ()=> setConnected(false);
+          ws.onerror = ()=> setConnected(false);
+          return ()=> ws.close();
+        } catch (err) {
+          console.warn('WebSocket error', err);
+        }
+      }, []);
+
+      // request camera/mic
+      const requestMedia = async () => {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+          streamRef.current = s;
+          setPermissionGranted(true);
+          if (videoRef.current) videoRef.current.srcObject = s;
+
+          // prepare MediaRecorder
+          const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+          const mr = new MediaRecorder(s, { mimeType: mime });
+          recordedRef.current = [];
+          mr.ondataavailable = (e)=> { if (e.data && e.data.size>0) recordedRef.current.push(e.data); };
+          mr.onstop = ()=> {
+            // auto-download blob when stop
+            const blob = new Blob(recordedRef.current, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `consultation-${Date.now()}.webm`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            setNotifications(n=>[{id:Date.now(), message:'Recording saved (downloaded).'}, ...n].slice(0,20));
+          };
+          mediaRef.current = mr;
+
+          setNotifications(n=>[{id:Date.now(), message:'Camera & mic enabled.'}, ...n].slice(0,20));
+        } catch (err) {
+          console.error('getUserMedia failed', err);
+          setPermissionGranted(false);
+          setNotifications(n=>[{id:Date.now(), message:'Camera permission denied or not available.'}, ...n].slice(0,20));
+        }
+      };
+
+      const stopMedia = () => {
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t=>t.stop());
+          streamRef.current = null;
+        }
+        if (videoRef.current) videoRef.current.srcObject = null;
+        setPermissionGranted(false);
+        setIsScreenSharing(false);
+        setNotifications(n=>[{id:Date.now(), message:'Camera turned off.'}, ...n].slice(0,20));
+      };
+
+      const startRecording = () => {
+        if (!mediaRef.current) { setNotifications(n=>[{id:Date.now(), message:'No recorder available — enable camera first.'}, ...n]); return; }
+        recordedRef.current = [];
+        mediaRef.current.start();
+        setIsRecording(true);
+        setNotifications(n=>[{id:Date.now(), message:'Recording started.'}, ...n].slice(0,20));
+      };
+
+      const stopRecording = () => {
+        if (mediaRef.current && mediaRef.current.state !== 'inactive') {
+          mediaRef.current.stop();
+          setIsRecording(false);
+        }
+      };
+
+      const toggleScreenShare = async () => {
+        if (isScreenSharing) {
+          // stop screen sharing and restore camera
+          stopMedia();
+          await requestMedia();
+          setIsScreenSharing(false);
+          return;
+        }
+        try {
+          const ds = await navigator.mediaDevices.getDisplayMedia({ video:true });
+          if (videoRef.current) videoRef.current.srcObject = ds;
+          // when screen share stops
+          ds.getVideoTracks()[0].onended = async () => {
+            // restore
+            stopMedia();
+            await requestMedia();
+            setIsScreenSharing(false);
+          };
+          setIsScreenSharing(true);
+          setNotifications(n=>[{id:Date.now(), message:'Screen sharing started.'}, ...n].slice(0,20));
+        } catch (err) {
+          console.warn('screen share failed', err);
+          setNotifications(n=>[{id:Date.now(), message:'Screen share failed/denied.'}, ...n].slice(0,20));
+        }
+      };
+
+      const takeSnapshot = () => {
+        const v = videoRef.current;
+        if (!v) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = v.videoWidth || 640;
+        canvas.height = v.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `snapshot-${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          setNotifications(n=>[{id:Date.now(), message:'Snapshot captured.'}, ...n].slice(0,20));
+        }, 'image/png');
+      };
+
+      const acceptAppointment = (appt) => {
+        setActiveAppointment(appt);
+        setAppointments(prev => prev.map(a => a.id === appt.id ? {...a, status:'Ongoing'} : a));
+        setMetrics(m => ({ ...m, liveConsults: m.liveConsults + 1 }));
+        setNotifications(n=>[{id:Date.now(), message:`Accepted ${appt.patient}`}, ...n].slice(0,20));
+      };
+
+      const sendChat = () => {
+        if (!chatInput) return;
+        const msg = { id:Date.now(), from:'me', text: chatInput };
+        setChatMessages(prev => [msg, ...prev].slice(0,50));
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(chatInput);
+        }
+        setChatInput('');
+      };
+
+      const clearNotifications = () => setNotifications([]);
+
+      return (
+        <div>
+          <div style={{display:'flex', gap:12, marginBottom:12}} className="metrics">
+            <div className="card">
+              <h3>Live Consults</h3>
+              <div className="big">{metrics.liveConsults}</div>
+            </div>
+            <div className="card">
+              <h3>Today's Bookings</h3>
+              <div className="big">{metrics.todayBooked}</div>
+            </div>
+            <div className="card">
+              <h3>Revenue</h3>
+              <div className="big">${metrics.revenue}</div>
+            </div>
+          </div>
+
+          <div className="grid-3" style={{alignItems:'start'}}>
+            {/* Appointments */}
+            <div className="card">
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <h3 style={{margin:0}}>Upcoming Appointments</h3>
+                <small className="small-muted">Live</small>
+              </div>
+              <div className="appt-list" style={{marginTop:10}}>
+                {appointments.map(a => (
+                  <div className="appt" key={a.id}>
+                    <div>
+                      <div style={{fontWeight:700}}>{a.patient}</div>
+                      <div className="small-muted" style={{fontSize:12}}>{a.time} • {a.type}</div>
+                    </div>
+                    <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                      <div className="status-pill" style={{background: a.status==='Pending' ? '#fef3c7' : a.status==='Ongoing' ? '#bfdbfe' : '#dcfce7', color: a.status==='Pending' ? '#92400e' : a.status==='Ongoing' ? '#1e3a8a' : '#065f46'}}>{a.status}</div>
+                      <button className="btn primary" onClick={()=>acceptAppointment(a)}>Accept</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Video / Controls */}
+            <div className="card video-box">
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <h3 style={{margin:0}}>Realtime Consultation</h3>
+                <div className="small-muted">{activeAppointment ? activeAppointment.patient : 'No active session'}</div>
+              </div>
+
+              <video ref={videoRef} autoPlay playsInline muted className="local"></video>
+
+              <div className="video-controls">
+                {!permissionGranted && <button className="btn primary" onClick={requestMedia}>Enable Camera & Mic</button>}
+                {permissionGranted && <button className="btn ghost" onClick={stopMedia}>Turn Off Camera</button>}
+                <button className="btn" onClick={()=>isRecording ? stopRecording() : startRecording()}>{isRecording ? 'Stop Recording' : 'Start Recording'}</button>
+                <button className="btn" onClick={takeSnapshot}>Snapshot</button>
+                <button className="btn" onClick={toggleScreenShare}>{isScreenSharing ? 'Stop Sharing' : 'Share Screen'}</button>
+                <button className="btn warn" onClick={()=>{ if (mediaRef.current) { mediaRef.current.state === 'paused' ? mediaRef.current.resume() : mediaRef.current.pause(); } }}>Pause/Resume Recorder</button>
+              </div>
+
+              <div style={{marginTop:8, display:'flex', gap:8, alignItems:'center', justifyContent:'space-between'}}>
+                <div className="small-muted">Permissions: {permissionGranted ? <span style={{color:'green'}}>Granted</span> : <span style={{color:'#b91c1c'}}>Not granted</span>}</div>
+                <div className="small-muted">Local size: {videoRef.current && videoRef.current.videoWidth ? `${videoRef.current.videoWidth}×${videoRef.current.videoHeight}` : 'n/a'}</div>
+              </div>
+            </div>
+
+            {/* Chat & Notifications */}
+            <div className="card" style={{display:'flex', flexDirection:'column', gap:8}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                <h3 style={{margin:0}}>Realtime Chat</h3>
+                <div className="small-muted">{connected ? 'Connected' : 'Disconnected'}</div>
+              </div>
+
+              <div className="chat" style={{flex:1}}>
+                <div className="chat-messages" aria-live="polite">
+                  {chatMessages.map(m => (
+                    <div key={m.id} className={'msg ' + (m.from === 'me' ? 'me' : 'them')}>
+                      <div style={{fontSize:11, color:'#475569'}}>{m.from}</div>
+                      <div>{m.text}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{display:'flex', gap:8}}>
+                  <input value={chatInput} onChange={e=>setChatInput(e.target.value)} placeholder="Type a message..." style={{flex:1, padding:8}} />
+                  <button className="btn primary" onClick={sendChat}>Send</button>
+                </div>
+
+                <div style={{marginTop:10}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                    <h4 style={{margin:0}}>Notifications</h4>
+                    <button className="btn ghost" onClick={clearNotifications}>Clear</button>
+                  </div>
+                  <div className="notifications">
+                    {notifications.map(n => <div key={n.id}>• {n.message}</div>)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{marginTop:12}} className="small-muted">Demo • For production: use proper WebRTC signalling, secure recording storage (S3/presigned uploads), TURN servers for connectivity, and server-side audit logging.</div>
+        </div>
+      );
+    }
+
+    /* ---------------- App Main ---------------- */
+    function App() {
+      return (
+        <BrowserRouter>
+          <div className="app">
+            <Sidebar />
+            <main className="main">
+              <Topbar onCopy={() => { /* optional callback */ }} />
+              <div className="content">
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={
+                    <>
+                      <DashboardOverview />
+                      <RealtimeDashboard />
+                    </>
+                  } />
+                  <Route path="/booking" element={<BookingPage />} />
+                  <Route path="/consultation" element={<ConsultationPage />} />
+                  <Route path="/payments" element={<PaymentsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/records" element={<RecordsPage />} />
+                  <Route path="/feedback" element={<FeedbackPage />} />
+                  <Route path="*" element={<div className="card"><h3>Not Found</h3></div>} />
+                </Routes>
+              </div>
+              <footer className="small" style={{borderTop:'1px solid #eef6fb'}}>Teleconsultation Demo • Use HTTPS / localhost for camera and screen capture to work.</footer>
+            </main>
+          </div>
+        </BrowserRouter>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
